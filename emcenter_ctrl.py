@@ -31,7 +31,6 @@ class EMCenerCtrlGUI:
         sg.theme('Reddit')
 
         self.widgetMap = {
-            '-GetStatus-': '-Status-',
             '-SetMastUL-': '-MastUL-',
             '-GetMastUL-': '-MastUL-',
             '-SetMastLL-': '-MastLL-',
@@ -67,8 +66,7 @@ class EMCenerCtrlGUI:
             [sg.Text('Status', font=('Courier',10), text_color='blue')],
             [sg.Text('EMCenter Status: ', font=('Courier',10), size=(25,1)), 
              sg.InputText('Getting Status...', disabled=True, font=('Courier',10), key='-Status-', size=(25,1)),
-             sg.Text('',font=('Courier',10), size=(5,1)),
-             sg.Text('', size=(4,1)), sg.Button('Get', font=('Courier',10), size=(4,1), key='-GetStatus-')],
+             sg.Text('',font=('Courier',10), size=(5,1))],
             [sg.Text('')],
             [sg.Text('Mast Position: ', font=('Courier',10), size=(25,1)), 
              sg.InputText('Getting Status...', disabled=True, font=('Courier',10), key='-MastPosition-', size=(25,1))], 
@@ -156,7 +154,8 @@ class EMCenterController:
         super().__init__()
 
         # objects for async GUI updates
-        self.mutex = threading.Lock()
+        self.refreshMutex = threading.Lock()
+        self.cmdMutex = threading.Lock()
         self.refreshThread = None
         self.doneFlag = False
 
@@ -206,7 +205,6 @@ class EMCenterController:
 
         # set up function callbacks
         self.funcTbl = {
-            '-GetStatus-': lambda _x: self.getStatus(),
             '-SetMastUL-': lambda _x: self.setUpperLimit('A', _x),
             '-GetMastUL-': lambda _x: self.getUpperLimit('A'),
             '-SetMastLL-': lambda _x: self.setLowerLimit('A', _x),
@@ -275,11 +273,12 @@ class EMCenterController:
         print(cmd)
         resp = None
 
-        n = self.writePort(cmd)
-        if n > 0:
-            resp = self.readPort()
-        else:
-            print("Error: Wrote " + str(n) + " bytes!")
+        with self.cmdMutex:
+            n = self.writePort(cmd)
+            if n > 0:
+                resp = self.readPort()
+            else:
+                print("Error: Wrote " + str(n) + " bytes!")
 
         return resp
 
@@ -390,31 +389,66 @@ class EMCenterController:
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd,val=pos)
         resp = self.set(cmdStr)
 
-        return resp[0]
+        return resp
 
     def setUpperLimit(self, axis, limit):
         cmd = 'CL'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd,val=limit)
-        resp = self.sendCmd(cmdStr)
-        pass
+        resp1 = self.set(cmdStr)
+        resp2 = self.getUpperLimit(axis)
+
+        with self.refreshMutex:
+            if resp1[0] != None and resp2[0] != None:
+                if axis == self.mastAxis:
+                    self.mastUL = resp2[1]
+                else:
+                    self.tableUL = resp2[1]
+        return resp1
 
     def getUpperLimit(self, axis):
         cmd = 'CL?'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
-        resp = self.sendCmd(cmdStr)
-        pass
+
+        resp = self.get(cmdStr)
+        
+        with self.refreshMutex:
+            if resp[0] != None:
+                if axis == self.mastAxis:
+                    self.mastUL = resp[1]
+                else:
+                    self.tableUL = resp[1]
+
+        return resp
 
     def setLowerLimit(self, axis, limit):
         cmd = 'WL'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd,val=limit)
-        resp = self.sendCmd(cmdStr)
-        pass
+        resp1 = self.set(cmdStr)
+        resp2 = self.getUpperLimit(axis)
+
+        with self.refreshMutex:
+            if resp1[0] != None and resp2[0] != None:
+                if axis == self.mastAxis:
+                    self.mastLL = resp2[1]
+                else:
+                    self.tableLL = resp2[1]
+
+        return resp1
 
     def getLowerLimit(self, axis):
         cmd = 'WL?'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
-        resp = self.sendCmd(cmdStr)
-        pass
+
+        resp = self.get(cmdStr)
+        
+        with self.refreshMutex:
+            if resp[0] != None:
+                if axis == self.mastAxis:
+                    self.mastUL = resp[1]
+                else:
+                    self.tableUL = resp[1]
+
+        return resp
 
     def setSpeed(self, axis, speed):
         cmd = 'SPEED'
@@ -460,7 +494,7 @@ class EMCenterController:
             mastScan = self.isScanning(self.mastAxis, update=False)
             tableScan = self.isScanning(self.tableAxis, update=False)
         
-            with self.mutex:
+            with self.refreshMutex:
                 if status[0] != None:
                     self.status = status[1]
                 if mastCp[0] != None:
@@ -491,7 +525,7 @@ class EMCenterController:
             elif event in (None, 'OK'):
                 print('OK')
             elif event in (None, '-Timeout-'):
-                with self.mutex:
+                with self.refreshMutex:
                     self.gui.window['-Status-'].Update(value=self.status)
                     self.gui.window['-MastPosition-'].Update(value=self.mastPosition)
                     self.gui.window['-TablePosition-'].Update(value=self.tablePosition)
