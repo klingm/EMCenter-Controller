@@ -488,11 +488,12 @@ class EMCenterController:
 
     def refresh(self):
         while not self.doneFlag:
-            status = self.getStatus(update=False)
-            mastCp = self.getCurrentPosition(self.mastAxis, update=False)
-            tableCp = self.getCurrentPosition(self.tableAxis, update=False)
-            mastScan = self.isScanning(self.mastAxis, update=False)
-            tableScan = self.isScanning(self.tableAxis, update=False)
+            with self.cmdMutex:
+                status = self.getStatus(update=False)
+                mastCp = self.getCurrentPosition(self.mastAxis, update=False)
+                tableCp = self.getCurrentPosition(self.tableAxis, update=False)
+                mastScan = self.isScanning(self.mastAxis, update=False)
+                tableScan = self.isScanning(self.tableAxis, update=False)
         
             with self.refreshMutex:
                 if status[0] != None:
