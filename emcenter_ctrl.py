@@ -363,7 +363,7 @@ class EMCenterController:
         cmd = 'CP?'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
         
-        resp = self.set(cmdStr)
+        resp = self.get(cmdStr)
         if resp[0] != None and update:
             if axis == self.mastAxis:
                 self.mastPosition = resp[1]
