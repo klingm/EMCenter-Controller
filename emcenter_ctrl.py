@@ -7,14 +7,8 @@ from matplotlib import style
 
 import sys
 import os
-import time
-import math
-import statistics
 import getopt
 import logging
-import subprocess
-import threading
-import readline
 
 import serial
 import io
