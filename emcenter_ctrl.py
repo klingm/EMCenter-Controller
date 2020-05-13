@@ -227,8 +227,8 @@ class EMCenterController:
     def openPort(self):
         ret = self.OK
         try:
-            self._serial = serial.Serial(self.port, 115200, timeout=5, 
-                parity=serial.PARITY_NONE, write_timeout=5)
+            self._serial = serial.Serial(self.port, 115200, timeout=1, 
+                parity=serial.PARITY_NONE, write_timeout=1)
             self.serialIO = io.TextIOWrapper(io.BufferedRWPair(self._serial, self._serial))
             ret = self.OK
         except serial.SerialException as e:
@@ -296,7 +296,7 @@ class EMCenterController:
             print("Error in get command: " + cmdStr)
             status = self.Error
         else:
-            print(resp)
+            print('DEBUG: ' + resp)
 
         return status, resp
     
@@ -319,6 +319,8 @@ class EMCenterController:
         resp = self.get(cmdStr)
         if resp[0] != None:
             self.status = resp[1]
+
+        return resp[0]
 
     def startScan(self, axis):
         cmd = 'SC'
