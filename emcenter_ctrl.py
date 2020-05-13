@@ -449,9 +449,9 @@ class EMCenterController:
         with self.refreshMutex:
             if resp[0] != None:
                 if axis == self.mastAxis:
-                    self.mastUL = resp[1]
+                    self.mastLL = resp[1]
                 else:
-                    self.tableUL = resp[1]
+                    self.tableLL = resp[1]
 
         return resp
 
