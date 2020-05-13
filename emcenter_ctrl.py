@@ -177,10 +177,6 @@ class EMCenterController:
             print("Error opening seral port, exiting...")
             exit(-1)
 
-        if not self.getStatus():
-            print("Error with EMCenter, check that the device is ON and connected via USB.")
-            exit(-1)
-
         # defaults
         self.status = self.OK
         self.mastLL = 0
@@ -229,6 +225,10 @@ class EMCenterController:
             '-StartTableScan-': lambda _x: self.startScan('B'),
             '-SendManualCmd-': lambda _x: self.sendCmd(_x)
         }
+        
+        if not self.getStatus():
+            print("Error with EMCenter, check that the device is ON and connected via USB.")
+            exit(-1)
 
     def openPort(self):
         ret = self.OK
