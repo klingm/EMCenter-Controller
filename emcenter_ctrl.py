@@ -274,6 +274,7 @@ class EMCenterController:
         resp = None
 
         with self.cmdMutex:
+            print("***CM")
             n = self.writePort(cmd)
             if n > 0:
                 resp = self.readPort()
@@ -489,6 +490,7 @@ class EMCenterController:
     def refresh(self):
         while not self.doneFlag:
             with self.cmdMutex:
+                print("***CM")
                 status = self.getStatus(update=False)
                 mastCp = self.getCurrentPosition(self.mastAxis, update=False)
                 tableCp = self.getCurrentPosition(self.tableAxis, update=False)
@@ -496,6 +498,7 @@ class EMCenterController:
                 tableScan = self.isScanning(self.tableAxis, update=False)
         
             with self.refreshMutex:
+                print("***RM")
                 if status[0] != None:
                     self.status = status[1]
                 if mastCp[0] != None:
@@ -527,6 +530,7 @@ class EMCenterController:
                 print('OK')
             elif event in (None, '-Timeout-'):
                 with self.refreshMutex:
+                    print("***RM")
                     self.gui.window['-Status-'].Update(value=self.status)
                     self.gui.window['-MastPosition-'].Update(value=self.mastPosition)
                     self.gui.window['-TablePosition-'].Update(value=self.tablePosition)
