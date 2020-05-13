@@ -16,6 +16,9 @@ import subprocess
 import threading
 import readline
 
+import serial
+import io
+
 import PySimpleGUI as sg
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.backends.backend_tkagg import (NavigationToolbar2Tk as NavigationToolbar)
@@ -32,6 +35,33 @@ class EMCenerCtrlGUI:
         # set the theme for the window
         sg.theme('Reddit')
 
+        self.widgetMap = {
+            '-GetStatus-': '-Status-',
+            '-SetMastUL-': '-MastUL-',
+            '-GetMastUL-': '-MastUL-',
+            '-SetMastLL-': '-MastLL-',
+            '-GetMastLL-': '-MastLL-',
+            '-SetTableUL-': '-TableUL-',
+            '-GetTableUL-': '-TableUL-',
+            '-SetTableLL-': '-TableLL-',
+            '-GetTableLL-': '-TableLL-',
+            '-SetMastSpeed-': '-MastSpeed-',
+            '-GetMastSpeed-': '-MastSpeed-',
+            '-SetTableSpeed-': '-TableSpeed-',
+            '-GetTableSpeed-': '-TableSpeed-',
+            '-SetMastAccel-': '-MastAccel-',
+            '-GetMastAccel-': '-MastAccel-',
+            '-SetTableAccel-': '-TableAccel-',
+            '-GetTableAccel-': '-TableAccel-',
+            '-SetMastCycles-': '-MastCycles-',
+            '-GetMastCycles-': '-MastCycles-',
+            '-SetTableCycles-': '-TableCycles-',
+            '-GetTableCycles-': '-TableCycles-',
+            '-StartMastScan-': '-MastScanning-',
+            '-StartTableScan-': '-TableScanning-',
+            '-SendManualCmd-': '-ManualCmd-'
+        }
+
         # TO DO, add plots showing Az/El antenna position
 
         # col 1
@@ -43,7 +73,7 @@ class EMCenerCtrlGUI:
             [sg.Text('EMCenter Status: ', font=('Courier',10), size=(25,1)), 
              sg.InputText('Getting Status...', disabled=True, font=('Courier',10), key='-Status-', size=(25,1)),
              sg.Text('',font=('Courier',10), size=(5,1)),
-             sg.Text('', size=(4,1)), sg.Button('Get', font=('Courier',10), size=(4,1), key='-GetStatus')],
+             sg.Text('', size=(4,1)), sg.Button('Get', font=('Courier',10), size=(4,1), key='-GetStatus-')],
             [sg.Text('')],
             [sg.Text('Mast Position: ', font=('Courier',10), size=(25,1)), 
              sg.InputText('Getting Status...', disabled=True, font=('Courier',10), key='-Mast-', size=(25,1))], 
@@ -105,9 +135,13 @@ class EMCenerCtrlGUI:
             [sg.Text('')],
             # Command Area
             [sg.Text('Scan', font=('Courier',10), size=(25,1)),
-             sg.InputText('Getting Status...', disabled=True, font=('Courier',10), key='-Scanning-', size=(25,1)), 
+             sg.InputText('Getting Status...', disabled=True, font=('Courier',10), key='-MastScanning-', size=(25,1)), 
              sg.Text('', font=('Courier',10), size=(5,1)), 
-             sg.Button('Start', font=('Courier',10), size=(5,1), key='-StartScan-')], 
+             sg.Button('Start', font=('Courier',10), size=(5,1), key='-StartMastScan-')], 
+            [sg.Text('Scan', font=('Courier',10), size=(25,1)),
+             sg.InputText('Getting Status...', disabled=True, font=('Courier',10), key='-TableScanning-', size=(25,1)), 
+             sg.Text('', font=('Courier',10), size=(5,1)), 
+             sg.Button('Start', font=('Courier',10), size=(5,1), key='-StartTableScan-')], 
             [sg.Text('Manual Cmd: ', font=('Courier',10), size=(25,1)), 
              sg.InputText('', disabled=False, font=('Courier',10), key='-ManualCmd-', size=(25,1)), 
              sg.Text('', font=('Courier',10), size=(5,1)), 
@@ -125,11 +159,52 @@ class EMCenerCtrlGUI:
 class EMCenterController:
     def __init__(self, port):
         super().__init__()
-        self.gui = EMCenerCtrlGUI()
+        
+        # status codes
+        self.OK = True
+        self.Error = False
+        self.errorCode = ''
+        
+        # FIXME get from config file, CLI, or determine from device itself
+        self.slot = 2
+
+        # open serial port
         self.port = port
+        self._serial = None
+        self.serialIO = None
+        if not self.openPort():
+            print("Error opening seral port, exiting...")
+            exit(-1)
+
+        if not self.getStatus():
+            print("Error with EMCenter, check that the device is ON and connected via USB.")
+            exit(-1)
+
+        # defaults
+        self.status = self.OK
+        self.mastLL = 0
+        self.mastUL = 0
+        self.tableLL = 0
+        self.tableUL = 0
+        self.mastSpeed = 0
+        self.tableSpeed = 0
+        self.mastAccel = 0
+        self.tableAccel = 0
+        self.mastCycles = 0
+        self.tableCycles = 0
+        self.mastScanning = False
+        self.tableScanning = False
+        self.mastPosition = 0
+        self.tablePosition = 0
+        self.mastZeroDegOffset = 0
+        self.tableZeroDegOffset = 0
+
+        # Create UI
+        self.gui = EMCenerCtrlGUI()
 
         # set up function callbacks
         self.funcTbl = {
+            '-GetStatus-': lambda _x: self.getStatus(),
             '-SetMastUL-': lambda _x: self.setUpperLimit('A', _x),
             '-GetMastUL-': lambda _x: self.getUpperLimit('A'),
             '-SetMastLL-': lambda _x: self.setLowerLimit('A', _x),
@@ -150,51 +225,61 @@ class EMCenterController:
             '-GetMastCycles-': lambda _x: self.getCycles('A'),
             '-SetTableCycles-': lambda _x: self.setCycles('B', _x),
             '-GetTableCycles-': lambda _x: self.getCycles('B'),
+            '-StartMastScan-': lambda _x: self.startScan('A'),
+            '-StartTableScan-': lambda _x: self.startScan('B'),
             '-SendManualCmd-': lambda _x: self.sendCmd(_x)
         }
 
-        self.widgetTbl = {
-            '-SetMastUL-': '-MastUL-',
-            '-GetMastUL-': '-MastUL-',
-            '-SetMastLL-': '-MastLL-',
-            '-GetMastLL-': '-MastLL-',
-            '-SetTableUL-': '-TableUL-',
-            '-GetTableUL-': '-TableUL-',
-            '-SetTableLL-': '-TableLL-',
-            '-GetTableLL-': '-TableLL-',
-            '-SetMastSpeed-': '-MastSpeed-',
-            '-GetMastSpeed-': '-MastSpeed-',
-            '-SetTableSpeed-': '-TableSpeed-',
-            '-GetTableSpeed-': '-TableSpeed-',
-            '-SetMastAccel-': '-MastAccel-',
-            '-GetMastAccel-': '-MastAccel-',
-            '-SetTableAccel-': '-TableAccel-',
-            '-GetTableAccel-': '-TableAccel-',
-            '-SetMastCycles-': '-MastCycles-',
-            '-GetMastCycles-': '-MastCycles-',
-            '-SetTableCycles-': '-TableCycles-',
-            '-GetTableCycles-': '-TableCycles-',
-            '-SendManualCmd-': '-ManualCmd-'
-        }
-
-        # status codes
-        self.OK = True
-        self.Error = False
-        self.errorCode = ''
-
-        # FIXME get from config file, CLI, or determine from device itself
-        self.slot = 2
-
-        self.openPort()
-        if not self.checkStatus():
-            print("Error with EMCenter, check that the device is ON and connected via USB.")
-    
     def openPort(self):
-        pass
+        ret = self.OK
+        try:
+            self._serial = serial.Serial(self.port, 115200, timeout=5, 
+                parity=serial.PARITY_NONE, write_timeout=5)
+            self.serialIO = io.TextIOWrapper(io.BufferedRWPair(ser, ser))
+            ret = self.OK
+        except serial.SerialException as e:
+            print("Serial port exception: " + e.strerror)    
+            ret = self.Error
+            
+        return ret 
+
+    def writePort(self, val):
+        ret = 0 
+        try:
+            if self.serialIO != None:
+                ret = self.serialIO.write(str(val) + '\n')
+                self.serialIO.flush()
+        except serial.SerialTimeoutException as e:
+            print("Timeout in serial port write: " + e.strerror)
+        except serial.SerialException as e:
+            print("Exception in serial port write: " + e.strerror)
+
+
+        return ret
+
+    def readPort(self):
+        ret = None
+        try:
+            if self.serialIO != None:
+                ret = self.serialIO.readline()
+        except serial.SerialTimeoutException as e:
+            print("Timeout in serial port read: " + e.strerror)
+        except serial.SerialException as e:
+            print("Exception in serial port read: " + e.strerror)
+
+        return ret
 
     def sendCmd(self, cmd):
         print(cmd)
-        return self.OK
+        resp = None
+
+        n = self.writePort(cmd)
+        if n > 0:
+            resp = self.readPort()
+        else:
+            print("Error: Wrote " + str(n) + " bytes!")
+
+        return resp
 
     def createCmdStr(self, slot='', axis='', cmd='', val=''):
         # create the full string command
@@ -206,34 +291,61 @@ class EMCenterController:
 
         return cmdStr
 
-    def checkStatus(self):
-        cmd = 'STATUS?'
-        cmdStr = self.createCmdStr('','',cmd)
-        status = self.sendCmd(cmdStr)
+    # set and get functions for all configurable items.  All function return OK
+    # or Error depending on the response received.  Error is only return if no 
+    # response is received.
+    def get(self, cmdStr):
+        resp = self.sendCmd(cmdStr)
+        
+        if resp == None:
+            print("Error in get command: " + cmdStr)
+            status = self.Error
+        else:
+            self.status = resp 
+
+        return status, resp
+    
+    def set(self, cmdStr):
+        resp = self.sendCmd(cmdStr)
+        
+        if resp == None:
+            print("Error in set command: " + cmdStr)
+            status = self.Error
+        else:
+            self.status = resp 
+
         return status
 
-    def startScan(self, iterations, axis):
+    def getStatus(self):
+        cmd = 'STATUS?'
+        cmdStr = self.createCmdStr('','',cmd)
+
+        resp = self.get(cmdStr)
+        if resp[0] != None:
+            self.status = resp[1]
+
+    def startScan(self, axis):
         cmd = 'SC'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
-        status = self.sendCmd(cmdStr)
+        resp = self.sendCmd(cmdStr)
         return status
 
     def isScanning(self, axis):
         cmd = 'SC?'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
-        status = self.sendCmd(cmdStr)
+        resp = self.sendCmd(cmdStr)
         return status
 
     def stop(self, axis):
         cmd = 'ST'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
-        status = self.sendCmd(cmdStr)
+        resp = self.sendCmd(cmdStr)
         pass
 
     def getCurrentPosition(self, axis):
         cmd = 'CP?'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
-        status = self.sendCmd(cmdStr)
+        resp = self.sendCmd(cmdStr)
         pos = 0
 
         return pos
@@ -249,74 +361,74 @@ class EMCenterController:
             return self.OK
 
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd,val=pos)
-        status = self.sendCmd(cmdStr)
+        resp = self.sendCmd(cmdStr)
 
         return status
 
     def setUpperLimit(self, axis, limit):
         cmd = 'CL'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd,val=limit)
-        status = self.sendCmd(cmdStr)
+        resp = self.sendCmd(cmdStr)
         pass
 
     def getUpperLimit(self, axis):
         cmd = 'CL?'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
-        status = self.sendCmd(cmdStr)
+        resp = self.sendCmd(cmdStr)
         pass
 
     def setLowerLimit(self, axis, limit):
         cmd = 'WL'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd,val=limit)
-        status = self.sendCmd(cmdStr)
+        resp = self.sendCmd(cmdStr)
         pass
 
     def getLowerLimit(self, axis):
         cmd = 'WL?'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
-        status = self.sendCmd(cmdStr)
+        resp = self.sendCmd(cmdStr)
         pass
 
     def setSpeed(self, axis, speed):
         cmd = 'SPEED'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd,val=speed)
-        status = self.sendCmd(cmdStr)
+        resp = self.sendCmd(cmdStr)
         pass
 
     def getSpeed(self, axis):
         cmd = 'SPEED?'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
-        status = self.sendCmd(cmdStr)
+        resp = self.sendCmd(cmdStr)
         pass
 
     def setAcceleration(self, axis, accel):
         cmd = 'ACC'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd,val=accel)
-        status = self.sendCmd(cmdStr)
+        resp = self.sendCmd(cmdStr)
         pass
 
     def getAcceleration(self, axis):
         cmd = 'ACC?'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
-        status = self.sendCmd(cmdStr)
+        resp = self.sendCmd(cmdStr)
         pass
 
     def setCycles(self, axis, cycles):
         cmd = 'CY'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd,val=cycles)
-        status = self.sendCmd(cmdStr)
+        resp = self.sendCmd(cmdStr)
         pass
 
     def getCycles(self, axis):
         cmd = 'CY?'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
-        status = self.sendCmd(cmdStr)
+        resp = self.sendCmd(cmdStr)
         pass
 
     def getType(self):
         cmd = 'TYP?'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
-        status = self.sendCmd(cmdStr)
+        resp = self.sendCmd(cmdStr)
         pass
 
     def run(self):
@@ -335,8 +447,8 @@ class EMCenterController:
             else:
                 # call function from dictionary
                 if self.funcTbl.get(event) != None:
-                    if self.widgetTbl.get(event) != None:
-                        val = values[self.widgetTbl.get(event)]
+                    if self.gui.widgetMap.get(event) != None:
+                        val = values[self.gui.widgetMap.get(event)]
                         self.funcTbl.get(event)(val)
                 else:
                     print(event)
