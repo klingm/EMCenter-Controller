@@ -295,6 +295,8 @@ class EMCenterController:
         if resp == None:
             print("Error in get command: " + cmdStr)
             status = self.Error
+        else:
+            print(resp)
 
         return status, resp
     
@@ -305,6 +307,8 @@ class EMCenterController:
         if resp == None:
             print("Error in set command: " + cmdStr)
             status = self.Error
+        else:
+            print(resp)
 
         return status
 
