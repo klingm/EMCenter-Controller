@@ -155,7 +155,9 @@ class EMCenterController:
     def __init__(self, port):
         super().__init__()
 
+        # objects for async GUI updates
         self.mutex = threading.Lock()
+        self.refreshThread = None
 
         # status codes
         self.OK = True
@@ -470,8 +472,12 @@ class EMCenterController:
         
         time.sleep(1)
 
-
     def run(self):
+
+        #spawn the refresh thread
+        self.refreshThread = threading.Thread(target=self.refresh)
+        self.refreshThread.start()
+
         done = False
         while(not done):
             # wait for user action, or timeout.  On timeout update the window.
