@@ -229,7 +229,7 @@ class EMCenterController:
         try:
             self._serial = serial.Serial(self.port, 115200, timeout=5, 
                 parity=serial.PARITY_NONE, write_timeout=5)
-            self.serialIO = io.TextIOWrapper(io.BufferedRWPair(ser, ser))
+            self.serialIO = io.TextIOWrapper(io.BufferedRWPair(self._serial, self._serial))
             ret = self.OK
         except serial.SerialException as e:
             print("Serial port exception: " + e.strerror)    
