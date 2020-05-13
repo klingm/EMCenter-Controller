@@ -226,9 +226,9 @@ class EMCenterController:
             '-SendManualCmd-': lambda _x: self.sendCmd(_x)
         }
         
-        if not self.getStatus():
-            print("Error with EMCenter, check that the device is ON and connected via USB.")
-            exit(-1)
+        #if not self.getStatus():
+        #    print("Error with EMCenter, check that the device is ON and connected via USB.")
+        #    exit(-1)
 
     def openPort(self):
         ret = self.OK
@@ -273,13 +273,11 @@ class EMCenterController:
         print(cmd)
         resp = None
 
-        with self.cmdMutex:
-            print("***CM")
-            n = self.writePort(cmd)
-            if n > 0:
-                resp = self.readPort()
-            else:
-                print("Error: Wrote " + str(n) + " bytes!")
+        n = self.writePort(cmd)
+        if n > 0:
+            resp = self.readPort()
+        else:
+            print("Error: Wrote " + str(n) + " bytes!")
 
         return resp
 
@@ -297,29 +295,35 @@ class EMCenterController:
     # or Error depending on the response received.  Error is only return if no 
     # response is received.
     def get(self, cmdStr):
-        resp = self.sendCmd(cmdStr)
-        
-        status = self.OK
-        if resp == None:
-            print("Error in get command: " + cmdStr)
-            status = self.Error
-        else:
-            print('DEBUG: ' + resp)
+        resp = None
+        status = None
+        with self.cmdMutex:
+            resp = self.sendCmd(cmdStr)
+            
+            status = self.OK
+            if resp == None:
+                print("Error in get command: " + cmdStr)
+                status = self.Error
+            else:
+                print('DEBUG: ' + resp)
 
         return status, resp
     
     def set(self, cmdStr):
-        resp = self.sendCmd(cmdStr)
-        
-        status = self.OK
-        if resp == None:
-            print("Error in set command: " + cmdStr)
-            status = self.Error
-        elif resp != 'OK':
-            status = self.Error
-            print('ERROR: ' + resp)
-        else:
-            print('DEBUG: ' + resp)
+        resp = None
+        status = None
+        with self.cmdMutex:
+            resp = self.sendCmd(cmdStr)
+            
+            status = self.OK
+            if resp == None:
+                print("Error in set command: " + cmdStr)
+                status = self.Error
+            elif resp != 'OK':
+                status = self.Error
+                print('ERROR: ' + resp)
+            else:
+                print('DEBUG: ' + resp)
 
         return status, resp
 
@@ -489,16 +493,13 @@ class EMCenterController:
 
     def refresh(self):
         while not self.doneFlag:
-            with self.cmdMutex:
-                print("***CM")
-                status = self.getStatus(update=False)
-                mastCp = self.getCurrentPosition(self.mastAxis, update=False)
-                tableCp = self.getCurrentPosition(self.tableAxis, update=False)
-                mastScan = self.isScanning(self.mastAxis, update=False)
-                tableScan = self.isScanning(self.tableAxis, update=False)
+            status = self.getStatus(update=False)
+            mastCp = self.getCurrentPosition(self.mastAxis, update=False)
+            tableCp = self.getCurrentPosition(self.tableAxis, update=False)
+            mastScan = self.isScanning(self.mastAxis, update=False)
+            tableScan = self.isScanning(self.tableAxis, update=False)
         
             with self.refreshMutex:
-                print("***RM")
                 if status[0] != None:
                     self.status = status[1]
                 if mastCp[0] != None:
@@ -530,10 +531,13 @@ class EMCenterController:
                 print('OK')
             elif event in (None, '-Timeout-'):
                 with self.refreshMutex:
-                    print("***RM")
                     self.gui.window['-Status-'].Update(value=self.status)
                     self.gui.window['-MastPosition-'].Update(value=self.mastPosition)
                     self.gui.window['-TablePosition-'].Update(value=self.tablePosition)
+                    self.gui.window['-MastUL-'].Update(value=self.mastUL)
+                    self.gui.window['-MastLL-'].Update(value=self.mastLL)
+                    self.gui.window['-TableUL-'].Update(value=self.tableUL)
+                    self.gui.window['-TableLL-'].Update(value=self.tableLL)
 
             else:
                 # call function from dictionary
