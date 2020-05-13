@@ -490,9 +490,9 @@ class EMCenterController:
                 print('OK')
             elif event in (None, '-Timeout-'):
                 with self.mutex:
-                    self.gui.window['-Status-'].Update(val=self.status)
-                    self.gui.window['-MastPosition-'].Update(val=self.mastPosition)
-                    self.gui.window['-TablePosition-'].Update(val=self.tablePosition)
+                    self.gui.window['-Status-'].Update(value=self.status)
+                    self.gui.window['-MastPosition-'].Update(value=self.mastPosition)
+                    self.gui.window['-TablePosition-'].Update(value=self.tablePosition)
 
             else:
                 # call function from dictionary
