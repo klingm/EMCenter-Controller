@@ -158,6 +158,7 @@ class EMCenterController:
         # objects for async GUI updates
         self.mutex = threading.Lock()
         self.refreshThread = None
+        self.doneFlag = False
 
         # status codes
         self.OK = True
@@ -452,25 +453,26 @@ class EMCenterController:
         pass
 
     def refresh(self):
-        status = self.getStatus(update=False)
-        mastCp = self.getCurrentPosition(self.mastAxis, update=False)
-        tableCp = self.getCurrentPosition(self.tableAxis, update=False)
-        mastScan = self.isScanning(self.mastAxis, update=False)
-        tableScan = self.isScanning(self.tableAxis, update=False)
+        while not self.doneFlag:
+            status = self.getStatus(update=False)
+            mastCp = self.getCurrentPosition(self.mastAxis, update=False)
+            tableCp = self.getCurrentPosition(self.tableAxis, update=False)
+            mastScan = self.isScanning(self.mastAxis, update=False)
+            tableScan = self.isScanning(self.tableAxis, update=False)
         
-        with self.mutex:
-            if status[0] != None:
-                self.status = status[1]
-            if mastCp[0] != None:
-                self.mastPosition = mastCp[1]
-            if tableCp[0] != None:
-                self.tablePosition = tableCp[1]
-            if mastScan[0] != None:
-                self.mastScanning = mastScan[1]
-            if tableScan[0] != None:
-                self.tableScanning = tableScan[1]
-        
-        time.sleep(1)
+            with self.mutex:
+                if status[0] != None:
+                    self.status = status[1]
+                if mastCp[0] != None:
+                    self.mastPosition = mastCp[1]
+                if tableCp[0] != None:
+                    self.tablePosition = tableCp[1]
+                if mastScan[0] != None:
+                    self.mastScanning = mastScan[1]
+                if tableScan[0] != None:
+                    self.tableScanning = tableScan[1]
+            
+            time.sleep(1)
 
     def run(self):
 
@@ -502,6 +504,8 @@ class EMCenterController:
                         self.funcTbl.get(event)(val)
                 else:
                     print(event)
+        
+        self.doneFlag = True
 
     # print usage info
 def usage():
