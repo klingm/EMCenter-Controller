@@ -9,6 +9,7 @@ import sys
 import os
 import getopt
 import logging
+import threading
 
 import serial
 import io
@@ -153,7 +154,9 @@ class EMCenerCtrlGUI:
 class EMCenterController:
     def __init__(self, port):
         super().__init__()
-        
+
+        self.mutex = threading.Lock()
+
         # status codes
         self.OK = True
         self.Error = False
@@ -317,60 +320,54 @@ class EMCenterController:
 
         return status, resp
 
-    def getStatus(self):
+    def getStatus(self, update=True):
         cmd = 'STATUS?'
         cmdStr = self.createCmdStr('','',cmd)
 
         resp = self.get(cmdStr)
-        if resp[0] != None:
+        if resp[0] != None and update:
             self.status = resp[1]
 
-        return resp[0]
+        return resp
 
     def startScan(self, axis):
         cmd = 'SC'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
         resp = self.set(cmdStr)
 
-        return resp[0]
+        return resp
 
-    def isScanning(self, axis):
+    def isScanning(self, axis, update=True):
         cmd = 'SC?'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
         resp = self.get(cmdStr)
-        if resp[0] != None:
+        if resp[0] != None and update:
             if axis == self.mastAxis:
-                if resp[1] == '0':
-                    self.mastScanning = False
-                else:
-                    self.mastScanning = True
+                self.mastScanning = resp[1]
             else:
-                if resp[1] == '0':
-                    self.tableScanning = False
-                else:
-                    self.tableScanning = True
+                self.tableScanning = resp[1]
 
-        return resp[0]
+        return resp
 
     def stop(self, axis):
         cmd = 'ST'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
         resp = self.set(cmdStr)
 
-        return resp[0]
+        return resp
 
-    def getCurrentPosition(self, axis):
+    def getCurrentPosition(self, axis, update=True):
         cmd = 'CP?'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
         
         resp = self.set(cmdStr)
-        if resp[0] != None:
+        if resp[0] != None and update:
             if axis == self.mastAxis:
                 self.mastPosition = resp[1]
             else:
                 self.tablePosition = resp[1]
 
-        return resp[0]
+        return resp
 
     def seekPosition(self, axis, pos):
         cp = 0
@@ -452,11 +449,27 @@ class EMCenterController:
         resp = self.sendCmd(cmdStr)
         pass
 
-    def getType(self):
-        cmd = 'TYP?'
-        cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
-        resp = self.sendCmd(cmdStr)
-        pass
+    def refresh(self):
+        status = self.getStatus(update=False)
+        mastCp = self.getCurrentPosition(self.mastAxis, update=False)
+        tableCp = self.getCurrentPosition(self.tableAxis, update=False)
+        mastScan = self.isScanning(self.mastAxis, update=False)
+        tableScan = self.isScanning(self.tableAxis, update=False)
+        
+        with self.mutex:
+            if status[0] != None:
+                self.status = status[1]
+            if mastCp[0] != None:
+                self.mastPosition = mastCp[1]
+            if tableCp[0] != None:
+                self.tablePosition = tableCp[1]
+            if mastScan[0] != None:
+                self.mastScanning = mastScan[1]
+            if tableScan[0] != None:
+                self.tableScanning = tableScan[1]
+        
+        time.sleep(1)
+
 
     def run(self):
         done = False
@@ -470,15 +483,10 @@ class EMCenterController:
             elif event in (None, 'OK'):
                 print('OK')
             elif event in (None, '-Timeout-'):
-                self.getStatus()
-                self.getCurrentPosition(self.mastAxis)
-                self.getCurrentPosition(self.tableAxis)
-                self.isScanning(self.mastAxis)
-                self.isScanning(self.tableAxis)
-
-                self.gui.window('-Status-').Update(val=self.status)
-                self.gui.window('-MastPosition-').Update(val=self.mastPosition)
-                self.gui.window('-TablePosition-').Update(val=self.tablePosition)
+                with self.mutex:
+                    self.gui.window['-Status-'].Update(val=self.status)
+                    self.gui.window['-MastPosition-'].Update(val=self.mastPosition)
+                    self.gui.window['-TablePosition-'].Update(val=self.tablePosition)
 
             else:
                 # call function from dictionary
