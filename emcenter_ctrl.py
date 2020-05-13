@@ -291,22 +291,20 @@ class EMCenterController:
     def get(self, cmdStr):
         resp = self.sendCmd(cmdStr)
         
+        status = self.OK
         if resp == None:
             print("Error in get command: " + cmdStr)
             status = self.Error
-        else:
-            self.status = resp 
 
         return status, resp
     
     def set(self, cmdStr):
         resp = self.sendCmd(cmdStr)
         
+        status = self.OK
         if resp == None:
             print("Error in set command: " + cmdStr)
             status = self.Error
-        else:
-            self.status = resp 
 
         return status
 
