@@ -70,9 +70,9 @@ class EMCenerCtrlGUI:
              sg.Text('', size=(4,1)), sg.Button('Get', font=('Courier',10), size=(4,1), key='-GetStatus-')],
             [sg.Text('')],
             [sg.Text('Mast Position: ', font=('Courier',10), size=(25,1)), 
-             sg.InputText('Getting Status...', disabled=True, font=('Courier',10), key='-Mast-', size=(25,1))], 
+             sg.InputText('Getting Status...', disabled=True, font=('Courier',10), key='-MastPosition-', size=(25,1))], 
             [sg.Text('Turntable Position: ', font=('Courier',10), size=(25,1)), 
-             sg.InputText('Getting Status...', disabled=True, font=('Courier',10), key='-Turntable-', size=(25,1))], 
+             sg.InputText('Getting Status...', disabled=True, font=('Courier',10), key='-TablePosition-', size=(25,1))], 
             [sg.Text('')],
             # Settings Area
             [sg.Text('Settings', font=('Courier',10), size=(25,1), text_color='blue')],
@@ -161,6 +161,8 @@ class EMCenterController:
         
         # FIXME get from config file, CLI, or determine from device itself
         self.slot = 2
+        self.mastAxis = 'A'
+        self.tableAxis = 'B'
 
         # open serial port
         self.port = port
@@ -307,10 +309,13 @@ class EMCenterController:
         if resp == None:
             print("Error in set command: " + cmdStr)
             status = self.Error
+        elif resp != 'OK':
+            status = self.Error
+            print('ERROR: ' + resp)
         else:
-            print(resp)
+            print('DEBUG: ' + resp)
 
-        return status
+        return status, resp
 
     def getStatus(self):
         cmd = 'STATUS?'
@@ -325,43 +330,67 @@ class EMCenterController:
     def startScan(self, axis):
         cmd = 'SC'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
-        resp = self.sendCmd(cmdStr)
-        return status
+        resp = self.set(cmdStr)
+
+        return resp[0]
 
     def isScanning(self, axis):
         cmd = 'SC?'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
-        resp = self.sendCmd(cmdStr)
-        return status
+        resp = self.get(cmdStr)
+        if resp[0] != None:
+            if axis == self.mastAxis:
+                if resp[1] == '0':
+                    self.mastScanning = False
+                else:
+                    self.mastScanning = True
+            else:
+                if resp[1] == '0':
+                    self.tableScanning = False
+                else:
+                    self.tableScanning = True
+
+        return resp[0]
 
     def stop(self, axis):
         cmd = 'ST'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
-        resp = self.sendCmd(cmdStr)
-        pass
+        resp = self.set(cmdStr)
+
+        return resp[0]
 
     def getCurrentPosition(self, axis):
         cmd = 'CP?'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
-        resp = self.sendCmd(cmdStr)
-        pos = 0
+        
+        resp = self.set(cmdStr)
+        if resp[0] != None:
+            if axis == self.mastAxis:
+                self.mastPosition = resp[1]
+            else:
+                self.tablePosition = resp[1]
 
-        return pos
+        return resp[0]
 
     def seekPosition(self, axis, pos):
-        status = 0
-        cp = self.getCurrentPosition(axis)
-        if cp < pos:
-            cmd = 'SKP'
-        elif cp > pos:
-            cmd = 'SKN'
-        else:
-            return self.OK
+        cp = 0
+        if self.getCurrentPosition(axis) == self.OK:
+            if axis == self.mastAxis:
+                cp = int(self.mastPosition)
+            else:
+                cp = int(self.tablePosition)
+            
+            if cp < pos:
+                cmd = 'SKP'
+            elif cp > pos:
+                cmd = 'SKN'
+            else:
+                return self.OK
 
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd,val=pos)
-        resp = self.sendCmd(cmdStr)
+        resp = self.set(cmdStr)
 
-        return status
+        return resp[0]
 
     def setUpperLimit(self, axis, limit):
         cmd = 'CL'
@@ -433,7 +462,7 @@ class EMCenterController:
         done = False
         while(not done):
             # wait for user action, or timeout.  On timeout update the window.
-            event, values = self.gui.window.read(timeout=500, timeout_key='-Timeout-')
+            event, values = self.gui.window.read(timeout=1000, timeout_key='-Timeout-')
 
             if event in (None, 'Exit'):
                 print('Exiting window')
@@ -441,7 +470,16 @@ class EMCenterController:
             elif event in (None, 'OK'):
                 print('OK')
             elif event in (None, '-Timeout-'):
-                pass
+                self.getStatus()
+                self.getCurrentPosition(self.mastAxis)
+                self.getCurrentPosition(self.tableAxis)
+                self.isScanning(self.mastAxis)
+                self.isScanning(self.tableAxis)
+
+                self.gui.window('-Status-').Update(val=self.status)
+                self.gui.window('-MastPosition-').Update(val=self.mastPosition)
+                self.gui.window('-TablePosition-').Update(val=self.tablePosition)
+
             else:
                 # call function from dictionary
                 if self.funcTbl.get(event) != None:
