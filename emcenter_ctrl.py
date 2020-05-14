@@ -247,7 +247,7 @@ class EMCenterController:
         self.tableZeroDegOffset = "Unknown..."
 
         # Create UI
-        self.gui = EMCenerCtrlGUI()
+        #self.gui = EMCenerCtrlGUI()
 
         # set up function callbacks
         self.funcTbl = {
@@ -644,6 +644,8 @@ class EMCenterController:
             time.sleep(1)
 
     def run(self):
+        # Create UI
+        self.gui = EMCenerCtrlGUI()
 
         #spawn the refresh thread
         self.refreshThread = threading.Thread(target=self.refresh)
