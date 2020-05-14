@@ -522,7 +522,7 @@ class EMCenterController:
         done = False
         while(not done):
             # wait for user action, or timeout.  On timeout update the window.
-            event, values = self.gui.window.read(timeout=1000, timeout_key='-Timeout-')
+            event, values = self.gui.window.read(timeout=500, timeout_key='-Timeout-')
 
             if event in (None, 'Exit'):
                 print('Exiting window')
