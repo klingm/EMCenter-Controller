@@ -21,6 +21,8 @@ from matplotlib.backends.backend_tkagg import (NavigationToolbar2Tk as Navigatio
 from datetime import datetime
 import time
 
+import socket
+
 matplotlib.use('TkAgg')
 
 class EMCenerCtrlGUI:
@@ -140,8 +142,7 @@ class EMCenerCtrlGUI:
              sg.Text('', font=('Courier',10), size=(5,1)), 
              sg.Button('Send', font=('Courier',10), size=(5,1), key='-SendManualCmd-')],
             [sg.Text('')],
-            [sg.Text('')],
-            [sg.OK()]
+            [sg.Text('')]
         ]
 
         layout = [[sg.Column(col1)]]
@@ -150,9 +151,22 @@ class EMCenerCtrlGUI:
         self.window = window
         
 class EMCenterController:
-    def __init__(self, port):
+    def __init__(self, port, remoteAddr='', remotePort=''):
         super().__init__()
 
+        # check for remote socket mode
+        self.mode = 'local'
+        self.remoteAddr = remoteAddr
+        self.remotePort = remotePort
+        if self.remoteAddr != '':
+            self.mode = 'socket'
+        
+        if self.mode == 'socket' and self.remotePort == '':
+            print('Error, must specify a remote port for socket connection!')
+            exit(-1)
+        elif self.mode == 'socket' and self.remotePort != '':
+            self.remotePort = int(self.remotePort)
+        
         # objects for async GUI updates
         self.refreshMutex = threading.Lock()
         self.cmdMutex = threading.Lock()
@@ -171,10 +185,13 @@ class EMCenterController:
 
         # open serial port
         self.port = port
-        self._serial = None
+        self._port = None
         self.serialIO = None
         if not self.openPort():
-            print("Error opening seral port, exiting...")
+            if self.mode == 'socket':
+                print("Error opening socket, exiting...")
+            else:
+                print("Error opening seral port, exiting...")
             exit(-1)
 
         # defaults
@@ -229,16 +246,28 @@ class EMCenterController:
         #if not self.getStatus():
         #    print("Error with EMCenter, check that the device is ON and connected via USB.")
         #    exit(-1)
+    
+    def __del__(self):
+        if self._port != None:
+            self._port.close()
 
     def openPort(self):
         ret = self.OK
         try:
-            self._serial = serial.Serial(self.port, 115200, timeout=1, 
-                parity=serial.PARITY_NONE, write_timeout=1)
-            self.serialIO = io.TextIOWrapper(io.BufferedRWPair(self._serial, self._serial))
+            if self.mode == 'socket':
+                self._port = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self._port.connect((self.remoteAddr, self.remotePort))
+            else:
+                self._port = serial.Serial(self.port, 115200, timeout=1, 
+                    parity=serial.PARITY_NONE, write_timeout=1)
+            
+            self.serialIO = io.TextIOWrapper(io.BufferedRWPair(self._port, self._port))
             ret = self.OK
         except serial.SerialException as e:
             print("Serial port exception: " + e.strerror)    
+            ret = self.Error
+        except socket.error as e:
+            print("Socket exception: " + e.strerror)    
             ret = self.Error
             
         return ret 
@@ -562,17 +591,24 @@ def usage():
 def main(argv):
     # grab command line args
     try:
-        opts, args = getopt.getopt(argv,"h")
+        opts, args = getopt.getopt(argv,"hr:", ["--remote"])
     except getopt.GetoptError:
         usage()
         return
 
+    remoteAddr = ('','')
     for opt, arg in opts:
         if opt == '-h':
             usage()
             return
+        elif opt == '-r':
+            remoteAddr = arg.split(':')
+            if len(remoteAddr) < 2:
+                print('Must specify remote IP and Port as [ip_addr]:[port]\n')
+                usage()
+                return
 
-    ctrl = EMCenterController('COM6')
+    ctrl = EMCenterController('COM6', remoteAddr=remoteAddr[0], remotePort=remoteAddr[1])
     ctrl.run()
 
 # callable from command line
