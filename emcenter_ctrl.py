@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as pyplot
 import matplotlib.animation as animation
 from matplotlib import style
@@ -22,8 +23,6 @@ from datetime import datetime
 import time
 
 import socket
-
-matplotlib.use('TkAgg')
 
 class EMCenerCtrlGUI:
     def __init__(self):
@@ -222,7 +221,7 @@ class EMCenterController:
             if self.mode == 'socket':
                 print("Error opening socket, exiting...")
             else:
-                print("Error opening seral port, exiting...")
+                print("Error opening serial port, exiting...")
             exit(-1)
 
         # defaults
@@ -263,7 +262,7 @@ class EMCenterController:
             '-GetMastSpeed-': lambda _x: self.getSpeed(self.mastAxis),
             '-SetTableSpeed-': lambda _x: self.setSpeed(self.tableAxis, _x),
             '-GetTableSpeed-': lambda _x: self.getSpeed(self.tableAxis),
-            '-SetMastAccel-': lambda _x: self.setAcceleration(self.mastAxis, _x),
+            '-SetMastAccel-': lambda _x: self.setAccSHUT_RDWReleration(self.mastAxis, _x),
             '-GetMastAccel-': lambda _x: self.getAcceleration(self.mastAxis),
             '-SetTableAccel-': lambda _x: self.setAcceleration(self.tableAxis, _x),
             '-GetTableAccel-': lambda _x: self.getAcceleration(self.tableAxis),
@@ -294,8 +293,20 @@ class EMCenterController:
         self.getCycles(self.tableAxis)
 
     def __del__(self):
+        #print('EMCenterController dtor')
+        self.kill()
+    
+    def kill(self):
         if self._port != None:
+            self.serialIO.close()
             self._port.close()
+            if self.mode == 'socket':
+                self._sock.shutdown(socket.SHUT_RDWR)
+                self._sock.close()
+                self._sock = None
+
+            self.serialIO = None 
+            self._port = None
 
     def openPort(self):
         ret = self.OK
@@ -497,7 +508,7 @@ class EMCenterController:
         return resp
 
     def setUpperLimit(self, axis, limit):
-        cmd = 'CL'
+        cmd = 'WL'
         if limit == '':
             limit = ' '
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd,val=limit)
@@ -507,7 +518,7 @@ class EMCenterController:
         return resp1
 
     def getUpperLimit(self, axis):
-        cmd = 'CL?'
+        cmd = 'WL?'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
 
         resp = self.get(cmdStr)
@@ -522,7 +533,7 @@ class EMCenterController:
         return resp
 
     def setLowerLimit(self, axis, limit):
-        cmd = 'WL'
+        cmd = 'CL'
         if limit == '':
             limit = ' '
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd,val=limit)
@@ -532,7 +543,7 @@ class EMCenterController:
         return resp1
 
     def getLowerLimit(self, axis):
-        cmd = 'WL?'
+        cmd = 'CL?'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
 
         resp = self.get(cmdStr)
