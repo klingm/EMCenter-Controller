@@ -181,7 +181,7 @@ class EMCenerCtrlGUI:
         self.window = window
         
 class EMCenterController:
-    def __init__(self, port, remoteAddr='', remotePort=''):
+    def __init__(self, port='', remoteAddr='', remotePort=''):
         super().__init__()
         self.debug = False
 
@@ -759,7 +759,7 @@ def main(argv):
                 usage()
                 return
 
-    ctrl = EMCenterController('COM6', remoteAddr=remoteAddr[0], remotePort=remoteAddr[1])
+    ctrl = EMCenterController(port='COM6', remoteAddr=remoteAddr[0], remotePort=remoteAddr[1])
     ctrl.run()
 
 # callable from command line
