@@ -24,6 +24,10 @@ import time
 
 import socket
 
+# This class uses the PySimpleGUI module to create a simple UI with widgets to
+# allow user control of a ETS-Lindgren 2-axis antenna positioner using EMCenter.
+# When an instance is created the window is opened.  Function callbacks for 
+# each interactive widget are handled by the creator.
 class EMCenerCtrlGUI:
     def __init__(self):
         super().__init__()
@@ -178,7 +182,14 @@ class EMCenerCtrlGUI:
 
         window = sg.Window('EMCenter Positioner Control', layout, resizable=False, finalize=True)
         self.window = window
-        
+
+# This class uses the published serial port API for the ETS-Lindgren EMCenter
+# controller to send commands and retrieve status of a 2-axis antenna 
+# positioner.  Commands are send and received via TCP/IP to a tcp to serial
+# "pipe" running on a computer connected via USB to the EMCenter.  The remote 
+# address and port for the TCP/IP connection must be specified.  Running in 
+# local mode is also supported by specifying the serial COM port that the 
+# EMCenter is connected to.
 class EMCenterController:
     def __init__(self, port='', remoteAddr='', remotePort=''):
         super().__init__()
@@ -191,13 +202,17 @@ class EMCenterController:
         if self.remoteAddr != '':
             self.mode = 'socket'
         
+        # check for valid input args for 'socket' mode
         if self.mode == 'socket' and self.remotePort == '':
             print('Error, must specify a remote port for socket connection!')
             exit(-1)
         elif self.mode == 'socket' and self.remotePort != '':
             self.remotePort = int(self.remotePort)
         
-        # objects for async GUI updates
+        # Objects for async GUI updates.  Status widgets are updated 
+        # periodically using a dedicated thread so accessing their contents 
+        # must be protected using Mutex's as string datatype operations cannot
+        # be guaranteed to be atomic.
         self.refreshMutex = threading.Lock()
         self.cmdMutex = threading.Lock()
         self.refreshThread = None
@@ -279,6 +294,8 @@ class EMCenterController:
             '-SendManualCmd-': lambda _x: self.sendCmd(_x)
         }
         
+        # get default values on init, these will be populated in the GUI on the 
+        # first iteration of run loop.
         self.getCurrentPosition(self.mastAxis)
         self.getCurrentPosition(self.tableAxis)
         self.getUpperLimit(self.mastAxis)
@@ -292,10 +309,13 @@ class EMCenterController:
         self.getCycles(self.mastAxis)
         self.getCycles(self.tableAxis)
 
+    # implicit destructor, call the kill() function for the object to 
+    # gracefully close all opened devices, etc.
     def __del__(self):
         #print('EMCenterController dtor')
         self.kill()
     
+    # Gracefully close socket, serial port, and IO handles
     def kill(self):
         if self._port != None:
             self.serialIO.close()
@@ -308,6 +328,11 @@ class EMCenterController:
             self.serialIO = None 
             self._port = None
 
+    # Open the serial port or socket depending on the specified mode.  When in 
+    # socket mode, the socket.makefile() function is used to create a 
+    # readable/writeable binary "file" that can be used with the IO 
+    # BufferedRWPair object.  When in serial port mode, the serial port object
+    # can directly be used with BufferRWPair.
     def openPort(self):
         ret = self.OK
         try:
@@ -330,6 +355,9 @@ class EMCenterController:
             
         return ret 
 
+
+    # Low level write function that uses the BufferedRWPair object to write 
+    # data to the port, this works the same for socket or serial port mode.
     def writePort(self, val):
         ret = 0 
         try:
@@ -344,6 +372,10 @@ class EMCenterController:
 
         return ret
 
+    # Low level read function that uses the BufferedRWPair object to read 
+    # data from the port, this works the same for socket or serial port mode. 
+    # Note that the readline function is used and then the trailing newline 
+    # char is stripped.
     def readPort(self):
         ret = None
         try:
@@ -356,6 +388,9 @@ class EMCenterController:
 
         return str(ret).rstrip()
 
+    # Low level function to send a command using the class writePort() function
+    # to send and then uses the class readPort() function to read the command 
+    # status/response.
     def sendCmd(self, cmd):
         if cmd == '':
             return 'Enter a command' 
@@ -373,6 +408,21 @@ class EMCenterController:
 
         return resp
 
+    # Create a command string based on the given arguments.  Command strings 
+    # are always in the following format:
+    #
+    #   [Slot][Axis][Cmd] [Val]
+    #
+    # Where:
+    #   - Slot is the EMCenter slot number of the positioner controller card
+    #   - Axis is the device ID for the specified axis, either 'A' or 'B'
+    #   - Cmd is the cmd string specified in the EMCenter EMControl manual.
+    #   - Val is the value specified for the associated cmd string in the 
+    #     EMControl manual
+    #
+    #   Example: 2ASKP 0
+    #       Command the mast to seek to position 0 degrees.
+    #
     def createCmdStr(self, slot='', axis='', cmd='', val=''):
         # create the full string command
         cmdStr = ''
@@ -383,9 +433,9 @@ class EMCenterController:
 
         return cmdStr
 
-    # set and get functions for all configurable items.  All function return OK
-    # or Error depending on the response received.  Error is only return if no 
-    # response is received.
+    # get function for all configurable items.  All function return OK or Error 
+    # depending on the response received; the response itself is returned as 
+    # well.  Error is only return if no response is received.
     def get(self, cmdStr):
         resp = None
         status = None
@@ -403,6 +453,9 @@ class EMCenterController:
 
         return status, resp
     
+    # set function for all configurable items.  All function return OK or Error 
+    # depending on the response received; the response itself is returned as 
+    # well.  Error is only return if no response is received.
     def set(self, cmdStr):
         resp = None
         status = None
@@ -423,6 +476,8 @@ class EMCenterController:
 
         return status, resp
 
+    # Function to get the current EMCenter status, return is a tuple containing
+    # command exeuction status and command response.
     def getStatus(self, update=True):
         cmd = 'STATUS?'
         cmdStr = self.createCmdStr('','',cmd)
@@ -433,6 +488,8 @@ class EMCenterController:
 
         return resp
 
+    # Function to start a scan on the specified axis, return is a tuple containing
+    # command exeuction status and command response.
     def startScan(self, axis):
         cmd = 'SC'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
@@ -440,6 +497,8 @@ class EMCenterController:
 
         return resp
 
+    # Function to query scan status on the specified axis, return is a tuple 
+    # containing command exeuction status and command response.
     def isScanning(self, axis, update=True):
         cmd = 'SC?'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
@@ -452,6 +511,8 @@ class EMCenterController:
 
         return resp
 
+    # Function to stop motion of the specified axis, return is a tuple 
+    # containing command exeuction status and command response.
     def stop(self, axis):
         cmd = 'ST'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
@@ -459,6 +520,8 @@ class EMCenterController:
 
         return resp
 
+    # Function to query the current position of the specified axis, return is a
+    # tuple containing command exeuction status and command response.
     def getCurrentPosition(self, axis, update=True):
         cmd = 'CP?'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
@@ -472,6 +535,11 @@ class EMCenterController:
 
         return resp
 
+    # Function to seek the specified position on the specified axis, return is a
+    # tuple containing command exeuction status and command response. Logic to 
+    # determine whether to issue a seek positive (CW) or seek negative (CCW)
+    # command is implemented by using the current position cached in a class 
+    # member variable.
     def seekPosition(self, axis, pos):
         cp = 0
         cmd = ''
@@ -507,6 +575,8 @@ class EMCenterController:
 
         return resp
 
+    # Function to set the upper limit of the specified axis, return is a tuple 
+    # containing command exeuction status and command response.
     def setUpperLimit(self, axis, limit):
         cmd = 'WL'
         if limit == '':
@@ -517,6 +587,8 @@ class EMCenterController:
 
         return resp1
 
+    # Function to get the upper limit of the specified axis, return is a tuple 
+    # containing command exeuction status and command response.
     def getUpperLimit(self, axis):
         cmd = 'WL?'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
@@ -532,6 +604,8 @@ class EMCenterController:
 
         return resp
 
+    # Function to set the lower limit of the specified axis, return is a tuple 
+    # containing command exeuction status and command response.
     def setLowerLimit(self, axis, limit):
         cmd = 'CL'
         if limit == '':
@@ -542,6 +616,8 @@ class EMCenterController:
 
         return resp1
 
+    # Function to get the lower limit of the specified axis, return is a tuple 
+    # containing command exeuction status and command response.
     def getLowerLimit(self, axis):
         cmd = 'CL?'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
@@ -557,6 +633,8 @@ class EMCenterController:
 
         return resp
 
+    # Function to set the speed of the specified axis, return is a tuple 
+    # containing command exeuction status and command response.
     def setSpeed(self, axis, speed):
         cmd = 'SPEED'
         if speed == '':
@@ -567,6 +645,8 @@ class EMCenterController:
 
         return resp1
 
+    # Function to get the speed of the specified axis, return is a tuple 
+    # containing command exeuction status and command response.
     def getSpeed(self, axis):
         cmd = 'SPEED?'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
@@ -582,6 +662,8 @@ class EMCenterController:
 
         return resp
 
+    # Function to set the acceleration of the specified axis, return is a tuple 
+    # containing command exeuction status and command response.
     def setAcceleration(self, axis, accel):
         cmd = 'ACC'
         if accel == '':
@@ -592,6 +674,8 @@ class EMCenterController:
 
         return resp1
 
+    # Function to get the acceleration of the specified axis, return is a tuple 
+    # containing command exeuction status and command response.
     def getAcceleration(self, axis):
         cmd = 'ACC?'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
@@ -607,6 +691,8 @@ class EMCenterController:
 
         return resp
 
+    # Function to set the scan cycle count of the specified axis, return is a 
+    # tuple containing command exeuction status and command response.
     def setCycles(self, axis, cycles):
         cmd = 'CY'
         if cycles == '':
@@ -617,6 +703,8 @@ class EMCenterController:
 
         return resp1
 
+    # Function to get the scan cycle count of the specified axis, return is a 
+    # tuple containing command exeuction status and command response.
     def getCycles(self, axis):
         cmd = 'CY?'
         cmdStr = self.createCmdStr(slot=self.slot,axis=axis,cmd=cmd)
@@ -632,6 +720,10 @@ class EMCenterController:
 
         return resp
 
+    # Thread loop used to asynchronously update/refresh the status, current
+    # position and scan state of the positioner.  The refreshMutex object is
+    # used to ensure mutual exclusion from two threads accessing the string 
+    # member variables simultaneously, which could result in a race condition.
     def refresh(self):
         while not self.doneFlag:
             status = self.getStatus(update=False)
@@ -654,6 +746,8 @@ class EMCenterController:
             
             time.sleep(1)
 
+    # Main thread loop that creates the GUI, and then waits for user actions 
+    # and updates widget field values.
     def run(self):
         # Create UI
         self.gui = EMCenerCtrlGUI()
@@ -691,6 +785,13 @@ class EMCenterController:
                     self.gui.window['-TableScanning-'].Update(value=self.tableScanning)
 
             else:
+                # This else block handles all user actions using a lambda 
+                # lookup table from the widget 'key'.  This allows a generic 
+                # loop to handle invoking all functions for user actions.  The
+                # 'key' is contained in the event variable.  The value for the 
+                # specified action is retrieved via lookup as well and then 
+                # passed to the lambda.
+
                 # call function from dictionary
                 resp = None
                 if self.funcTbl.get(event) != None:
@@ -710,6 +811,7 @@ class EMCenterController:
         
         self.doneFlag = True 
 
+    # Lookup table for EMCenter error codes
     def getEMCenterError(self, errorCode):
         #ERROR 1 Wrong command
         #ERROR 2 Requested position too high
@@ -741,7 +843,7 @@ class EMCenterController:
         else:
             return 'Unknown Error Code'
 
-    # print usage info
+# print usage info
 def usage():
     print("\nDescription: Controller for the ETS-Lindgren EMCenter 2-axis Antenna Positioner\n")
     print("\nUsage:\n")
