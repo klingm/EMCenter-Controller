@@ -347,10 +347,12 @@ class EMCenterController:
             self.serialIO = io.TextIOWrapper(io.BufferedRWPair(self._port, self._port))
             ret = self.OK
         except serial.SerialException as e:
-            print("Serial port exception: " + e.strerror)    
+            if e.strerror != None:
+                print("Serial port exception: " + e.strerror)    
             ret = self.Error
         except socket.error as e:
-            print("Socket exception: " + e.strerror)    
+            if e.strerror != None:
+                print("Socket exception: " + e.strerror)    
             ret = self.Error
             
         return ret 
