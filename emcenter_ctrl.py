@@ -341,8 +341,8 @@ class EMCenterController:
                 self._sock.connect((self.remoteAddr, self.remotePort))
                 self._port = self._sock.makefile('rwb', buffering=0)
             else:
-                self._port = serial.Serial(self.port, 115200, timeout=1, 
-                    parity=serial.PARITY_NONE, write_timeout=1)
+                self._port = serial.Serial(self.port, 115200, 
+                    parity=serial.PARITY_NONE)
             
             self.serialIO = io.TextIOWrapper(io.BufferedRWPair(self._port, self._port))
             ret = self.OK
@@ -847,32 +847,53 @@ class EMCenterController:
 def usage():
     print("\nDescription: Controller for the ETS-Lindgren EMCenter 2-axis Antenna Positioner\n")
     print("\nUsage:\n")
-    print(" ",__file__, " [-h] [-r add:port]\n")
+    print(" ",__file__, " [-h] [-p com_port] [-r addr:port]\n")
     print("     -h: help\n")
+    print("     -p: specify local comm port to connect to\n")
+    print("     -r: specify remote ip and tcp port to connect to\n")
     print("\n")
 
 # main function for command line entry point
 def main(argv):
     # grab command line args
     try:
-        opts, args = getopt.getopt(argv,"hr:", ["--remote"])
+        opts, args = getopt.getopt(argv,"hp:r:", ["--port","--remote"])
     except getopt.GetoptError:
         usage()
         return
 
     remoteAddr = ('','')
+    localPort = ''
+    valid = False
     for opt, arg in opts:
         if opt == '-h':
             usage()
             return
+        elif opt == '-p':
+            if valid == True:
+                print('Cannot specify local and remote port!')
+                exit(-1)
+
+            localPort = arg
+            valid = True
         elif opt == '-r':
+            if valid == True:
+                print('Cannot specify local and remote port!')
+                exit(-1)
+
             remoteAddr = arg.split(':')
             if len(remoteAddr) < 2:
                 print('Must specify remote IP and Port as [ip_addr]:[port]\n')
                 usage()
                 return
+            else:
+                valid = True
+    
+    if not valid:
+        usage()
+        exit(-1)
 
-    ctrl = EMCenterController(port='COM6', remoteAddr=remoteAddr[0], remotePort=remoteAddr[1])
+    ctrl = EMCenterController(port=localPort, remoteAddr=remoteAddr[0], remotePort=remoteAddr[1])
     ctrl.run()
 
 # callable from command line
