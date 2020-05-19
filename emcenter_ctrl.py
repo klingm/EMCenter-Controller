@@ -318,12 +318,20 @@ class EMCenterController:
     # Gracefully close socket, serial port, and IO handles
     def kill(self):
         if self._port != None:
-            self.serialIO.close()
-            self._port.close()
-            if self.mode == 'socket':
-                self._sock.shutdown(socket.SHUT_RDWR)
-                self._sock.close()
-                self._sock = None
+            try:
+                self.serialIO.close()
+                self._port.close()
+                if self.mode == 'socket':
+                    self._sock.shutdown(socket.SHUT_RDWR)
+                    self._sock.close()
+                    self._sock = None
+            except serial.SerialException as e:
+                if e.strerror != None:
+                    print('Except in closing serial port: ' + e.strerror)
+            except socket.error as e:
+                if e.strerror != None:
+                    print('Except in closing socket: ' + e.strerror)
+
 
             self.serialIO = None 
             self._port = None
@@ -341,7 +349,7 @@ class EMCenterController:
                 self._sock.connect((self.remoteAddr, self.remotePort))
                 self._port = self._sock.makefile('rwb', buffering=0)
             else:
-                self._port = serial.Serial(self.port, 115200, 
+                self._port = serial.Serial(self.port, 115200, timeout = 0.1,
                     parity=serial.PARITY_NONE)
             
             self.serialIO = io.TextIOWrapper(io.BufferedRWPair(self._port, self._port))
